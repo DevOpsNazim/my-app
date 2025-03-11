@@ -1,59 +1,91 @@
-name: CI/CD Pipeline
+name: CI/CD Pipeline for Docker and EC2
+
 on:
   push:
     branches:
       - main
-      - production
       - development
 
 jobs:
-  build:
+  # Job to Build and Push Docker Image to DockerHub
+  build_and_push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [production, development]
-
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
+      # Step 2: Set up Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-    - name: Log in to DockerHub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
+      # Step 3: Log in to Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Build and Push Docker Image
-      run: |
-        docker build -t devopsnazim/my-app:${{ matrix.environment }} .
-        docker push devopsnazim/my-app:${{ matrix.environment }}
+      # Step 4: Build the Docker image
+      - name: Build Docker image
+        run: |
+          IMAGE_NAME=my-app
+          if [ $GITHUB_REF == "refs/heads/main" ]; then
+            TAG=latest
+            ENVIRONMENT=production
+          else
+            TAG=dev
+            ENVIRONMENT=development
+          fi
+          docker build -t $DOCKER_USERNAME/$IMAGE_NAME:$TAG .
 
-  deploy:
+      # Step 5: Push the Docker image to Docker Hub
+      - name: Push Docker image to Docker Hub
+        run: |
+          IMAGE_NAME=my-app
+          if [ $GITHUB_REF == "refs/heads/main" ]; then
+            TAG=latest
+          else
+            TAG=dev
+          fi
+          docker push $DOCKER_USERNAME/$IMAGE_NAME:$TAG
+
+  # Job to Deploy to EC2
+  deploy_to_ec2:
+    needs: build_and_push
     runs-on: ubuntu-latest
-    needs: build
-    strategy:
-      matrix:
-        environment: [production, development]
-
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v2
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Set EC2 IP Address and Deploy to AWS EC2
-      run: |
-        # Set the EC2 IP address based on the environment
-        if [ "${{ matrix.environment }}" == "production" ]; then
-          EC2_IP=${{ secrets.AWS_EC2_IP_PRODUCTION }}
-        else
-          EC2_IP=${{ secrets.AWS_EC2_IP_DEVELOPMENT }}
-        fi
+      # Step 2: Set up SSH key for EC2 access
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.5.3
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-        # SSH into EC2 and deploy the app
-        ssh -o StrictHostKeyChecking=no -i ${{ secrets.AWS_SSH_KEY }} ubuntu@$EC2_IP << EOF
-        cd /home/ubuntu/my-app
-        ./deploy.sh
-        EOF
+      # Step 3: Deploy to EC2 (Production or Development)
+      - name: Deploy to EC2
+        run: |
+          if [ $GITHUB_REF == "refs/heads/main" ]; then
+            ENVIRONMENT=production
+            EC2_IP=${{ secrets.PROD_EC2_IP }}
+          else
+            ENVIRONMENT=development
+            EC2_IP=${{ secrets.DEV_EC2_IP }}
+          fi
+
+          # SSH into EC2 instance and deploy the Docker container
+          ssh -o StrictHostKeyChecking=no ec2-user@$EC2_IP << 'EOF'
+            # Pull the Docker image
+            docker pull $DOCKER_USERNAME/my-app:$ENVIRONMENT
+
+            # Stop and remove any running container
+            docker ps -q --filter "name=my-app" | xargs -r docker stop | xargs -r docker rm
+
+            # Run the new container
+            docker run -d --name my-app -p 80:80 $DOCKER_USERNAME/my-app:$ENVIRONMENT
+          EOF
+
 
