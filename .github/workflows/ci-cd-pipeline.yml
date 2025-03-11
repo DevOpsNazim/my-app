@@ -43,11 +43,14 @@ jobs:
 
     - name: Deploy to AWS EC2
       run: |
-        ssh -o StrictHostKeyChecking=no -i ${{ secrets.AWS_SSH_KEY }} ubuntu@${{ secrets['AWS_EC2_IP_' + matrix.environment | upper] }} << EOF
+        if [ "${{ matrix.environment }}" == "production" ]; then
+          EC2_IP=${{ secrets.AWS_EC2_IP_PRODUCTION }}
+        else
+          EC2_IP=${{ secrets.AWS_EC2_IP_DEVELOPMENT }}
+        fi
+
+        ssh -o StrictHostKeyChecking=no -i ${{ secrets.AWS_SSH_KEY }} ubuntu@$EC2_IP << EOF
         cd /home/ubuntu/my-app
         ./deploy.sh
         EOF
-      env:
-        AWS_EC2_IP_PRODUCTION: ${{ secrets.AWS_EC2_IP_PRODUCTION }}
-        AWS_EC2_IP_DEVELOPMENT: ${{ secrets.AWS_EC2_IP_DEVELOPMENT }}
 
