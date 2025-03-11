@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - main
-      - staging
       - development
 
 jobs:
@@ -11,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: [production, staging, development]
+        environment: [production, development]
 
     steps:
     - name: Checkout Repository
@@ -36,13 +35,15 @@ jobs:
     needs: build
     strategy:
       matrix:
-        environment: [production, staging, development]
+        environment: [production, development]
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v2
 
-    - name: Deploy to AWS EC2 run: | ssh -o StrictHostKeyChecking=no -i ${{ secrets.AWS_SSH_KEY }} ubuntu@${{ secrets['AWS_EC2_IP_' + matrix.environment | upper] }} << EOF cd /home/ubuntu/my-app ./deploy.sh EOF
+    - name: Deploy to AWS EC2 
+      run: | 
+        ssh -o StrictHostKeyChecking=no -i ${{ secrets.AWS_SSH_KEY }} ubuntu@${{ secrets['AWS_EC2_IP_' + matrix.environment | upper] }} << EOF cd /home/ubuntu/my-app ./deploy.sh EOF
     
       env:
         AWS_EC2_IP_PRODUCTION: ${{ secrets.AWS_EC2_IP_PRODUCTION }}
